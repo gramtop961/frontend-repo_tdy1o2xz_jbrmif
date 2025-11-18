@@ -1,71 +1,143 @@
+import { useEffect, useMemo, useState } from 'react'
+import Navbar from './components/Navbar'
+import Hero from './components/Hero'
+import ProductCard from './components/ProductCard'
+import Footer from './components/Footer'
+
 function App() {
+  const [products, setProducts] = useState([])
+  const [cart, setCart] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const backend = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+
+  const cartCount = useMemo(() => cart.reduce((sum, i) => sum + i.quantity, 0), [cart])
+  const cartTotal = useMemo(() => cart.reduce((sum, i) => sum + i.price * i.quantity, 0), [cart])
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`${backend}/api/products`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.length === 0) {
+            // seed if empty
+            await fetch(`${backend}/api/seed`)
+            const res2 = await fetch(`${backend}/api/products`)
+            const data2 = await res2.json()
+            setProducts(data2)
+          } else {
+            setProducts(data)
+          }
+        } else {
+          throw new Error('Failed to load products')
+        }
+      } catch (e) {
+        setError(e.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchProducts()
+  }, [])
+
+  const addToCart = (product) => {
+    setCart((prev) => {
+      const existing = prev.find((i) => i.id === product.id)
+      if (existing) {
+        return prev.map((i) => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
+      }
+      return [...prev, { id: product.id, title: product.title, price: product.price, image: product.images?.[0], quantity: 1 }]
+    })
+  }
+
+  const removeFromCart = (id) => setCart((prev) => prev.filter((i) => i.id !== id))
+  const updateQty = (id, qty) => setCart((prev) => prev.map((i) => i.id === id ? { ...i, quantity: Math.max(1, qty) } : i))
+
+  const checkout = async () => {
+    if (cart.length === 0) return
+    const order = {
+      items: cart.map(c => ({ product_id: c.id, title: c.title, price: c.price, quantity: c.quantity, image: c.image })),
+      customer: {
+        name: 'Guest', email: 'guest@example.com', address_line1: '123 Main St', city: 'San Francisco', state: 'CA', postal_code: '94105', country: 'US'
+      },
+      subtotal: cartTotal,
+      shipping: cartTotal > 75 ? 0 : 6,
+      total: cartTotal > 75 ? cartTotal : cartTotal + 6,
+      status: 'pending'
+    }
+    const res = await fetch(`${backend}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order) })
+    if (res.ok) {
+      const data = await res.json()
+      alert(`Order placed! Order id: ${data.id}`)
+      setCart([])
+    } else {
+      alert('Failed to place order')
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Subtle pattern overlay */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.05),transparent_50%)]"></div>
+    <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900">
+      <Navbar cartCount={cartCount} onCartClick={checkout} />
+      <Hero />
 
-      <div className="relative min-h-screen flex items-center justify-center p-8">
-        <div className="max-w-2xl w-full">
-          {/* Header with Flames icon */}
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center justify-center mb-6">
-              <img
-                src="/flame-icon.svg"
-                alt="Flames"
-                className="w-24 h-24 drop-shadow-[0_0_25px_rgba(59,130,246,0.5)]"
-              />
-            </div>
+      <section id="catalog" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold">Featured products</h2>
+          <div className="text-sm text-slate-500">{products.length} items</div>
+        </div>
 
-            <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
-              Flames Blue
-            </h1>
+        {loading && <div className="py-10 text-center text-slate-600">Loading products…</div>}
+        {error && <div className="py-10 text-center text-rose-600">{error}</div>}
 
-            <p className="text-xl text-blue-200 mb-6">
-              Build applications through conversation
-            </p>
+        {!loading && !error && (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {products.map(p => (
+              <ProductCard key={p.id} product={p} onAdd={addToCart} />
+            ))}
           </div>
+        )}
 
-          {/* Instructions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-blue-500/20 rounded-2xl p-8 shadow-xl mb-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                1
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Describe your idea</h3>
-                <p className="text-blue-200/80 text-sm">Use the chat panel on the left to tell the AI what you want to build</p>
-              </div>
+        {/* Cart summary */}
+        <div className="mt-12 bg-white border border-slate-200 rounded-xl p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold">Cart</div>
+              <div className="text-slate-600 text-sm">{cartCount} items</div>
             </div>
-
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                2
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Watch it build</h3>
-                <p className="text-blue-200/80 text-sm">Your app will appear in this preview as the AI generates the code</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                3
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Refine and iterate</h3>
-                <p className="text-blue-200/80 text-sm">Continue the conversation to add features and make changes</p>
-              </div>
+            <div className="text-right">
+              <div className="text-lg font-semibold">${cartTotal.toFixed(2)}</div>
+              <div className="text-xs text-slate-500">Free shipping over $75</div>
             </div>
           </div>
-
-          {/* Footer */}
-          <div className="text-center">
-            <p className="text-sm text-blue-300/60">
-              No coding required • Just describe what you want
-            </p>
+          {cart.length > 0 && (
+            <div className="mt-4 divide-y">
+              {cart.map(item => (
+                <div key={item.id} className="py-3 flex items-center gap-4">
+                  <img src={item.image} className="w-14 h-14 rounded object-cover" />
+                  <div className="flex-1">
+                    <div className="font-medium">{item.title}</div>
+                    <div className="text-sm text-slate-600">${item.price.toFixed(2)}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min={1} value={item.quantity} onChange={(e)=>updateQty(item.id, Number(e.target.value))} className="w-16 border rounded px-2 py-1" />
+                    <button className="text-slate-500 hover:text-rose-600" onClick={()=>removeFromCart(item.id)}>Remove</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-4 flex justify-end">
+            <button onClick={checkout} className="px-5 py-2 rounded-lg bg-slate-900 text-white hover:opacity-90 disabled:opacity-50" disabled={cart.length===0}>
+              Checkout
+            </button>
           </div>
         </div>
-      </div>
+      </section>
+
+      <Footer />
     </div>
   )
 }
